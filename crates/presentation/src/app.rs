@@ -25,7 +25,7 @@ pub fn App() -> Element {
 
         div { class: "min-h-screen bg-base-200 p-6",
             header { class: "flex items-center gap-2 mb-6",
-                span { class: "icon-[lucide--layout-dashboard] size-7" }
+                ZfirotLogo {}
                 h1 { class: "text-2xl font-bold", "Zfirot" }
             }
 
@@ -39,6 +39,30 @@ pub fn App() -> Element {
                 None => rsx! {
                     span { class: "loading loading-spinner loading-lg" }
                 },
+            }
+        }
+    }
+}
+
+/// The Zfirot ZF monogram: two equal-weight, hand-drawn strokes where the Z's
+/// bottom bar runs through the F stem to become the F's middle arm. Drawn with
+/// `currentColor` so it follows the surrounding text colour (daisyUI primary).
+#[component]
+fn ZfirotLogo() -> Element {
+    rsx! {
+        svg {
+            class: "size-7 text-primary",
+            view_box: "90 110 410 390",
+            fill: "none",
+            stroke: "currentColor",
+            "stroke-width": "56",
+            "stroke-linecap": "round",
+            "stroke-linejoin": "round",
+            g { transform: "translate(34,0) skewX(-7)",
+                // Z: top bar -> diagonal -> bottom bar (extends into the F).
+                path { d: "M 138,156 Q 216,146 292,152 Q 224,250 150,338 Q 300,348 452,334" }
+                // F: stem + top bar (middle arm is the Z's bottom bar).
+                path { d: "M 352,188 Q 345,314 350,440 M 350,188 Q 406,182 462,194" }
             }
         }
     }

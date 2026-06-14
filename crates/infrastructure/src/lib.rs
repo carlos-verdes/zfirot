@@ -6,7 +6,7 @@
 
 use application::GitHubPort;
 use async_trait::async_trait;
-use domain::{AppError, RepoRef, Slice, SliceState};
+use domain::{AppResult, RepoRef, Slice, SliceState};
 
 /// A fake [`GitHubPort`] that returns a fixed set of Slices.
 #[derive(Debug, Default, Clone, Copy)]
@@ -14,7 +14,7 @@ pub struct FakeGitHubPort;
 
 #[async_trait]
 impl GitHubPort for FakeGitHubPort {
-    async fn load_board(&self, _repo: &RepoRef) -> Result<Vec<Slice>, AppError> {
+    async fn load_board(&self, _repo: &RepoRef) -> AppResult<Vec<Slice>> {
         Ok(sample_slices())
     }
 }

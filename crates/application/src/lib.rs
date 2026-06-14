@@ -2,7 +2,7 @@
 //! implements (dependency inversion). Depends only on `domain`.
 
 use async_trait::async_trait;
-use domain::{AppError, RepoRef, Slice};
+use domain::{AppResult, RepoRef, Slice};
 
 /// The seam between the application and any GitHub backend (real or fake).
 ///
@@ -11,7 +11,7 @@ use domain::{AppError, RepoRef, Slice};
 #[async_trait]
 pub trait GitHubPort: Send + Sync {
     /// Load the Slices that make up a project's board.
-    async fn load_board(&self, repo: &RepoRef) -> Result<Vec<Slice>, AppError>;
+    async fn load_board(&self, repo: &RepoRef) -> AppResult<Vec<Slice>>;
 }
 
 /// Use-cases for the project board.
@@ -25,7 +25,7 @@ impl<P: GitHubPort> BoardService<P> {
     }
 
     /// Load the board for a project.
-    pub async fn load_board(&self, repo: &RepoRef) -> Result<Vec<Slice>, AppError> {
+    pub async fn load_board(&self, repo: &RepoRef) -> AppResult<Vec<Slice>> {
         self.port
             .load_board(repo)
             .await

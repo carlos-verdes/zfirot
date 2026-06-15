@@ -14,10 +14,22 @@ use super::{state_badge_class, state_label, BoardColumn};
 pub fn PrdLane(prd: Option<PrdRef>, slices: Vec<Slice>, on_assign: EventHandler<u64>) -> Element {
     let mut collapsed = use_signal(|| false);
 
-    // Per-state counts for the collapsed summary, in board column order.
-    let counts: Vec<(SliceState, usize)> = SliceState::BOARD
+    // Bucket each Slice into its board column exactly once, so a Slice is cloned
+    // at most once per render regardless of how many columns there are.
+    let mut buckets: Vec<(SliceState, Vec<Slice>)> = SliceState::BOARD
         .iter()
-        .map(|&state| (state, slices.iter().filter(|s| s.state == state).count()))
+        .map(|&state| (state, Vec::new()))
+        .collect();
+    for slice in slices {
+        if let Some((_, bucket)) = buckets.iter_mut().find(|(state, _)| *state == slice.state) {
+            bucket.push(slice);
+        }
+    }
+
+    // Per-state counts for the collapsed summary, in board column order.
+    let counts: Vec<(SliceState, usize)> = buckets
+        .iter()
+        .map(|(state, bucket)| (*state, bucket.len()))
         .collect();
 
     rsx! {
@@ -54,12 +66,12 @@ pub fn PrdLane(prd: Option<PrdRef>, slices: Vec<Slice>, on_assign: EventHandler<
             }
             if !collapsed() {
                 div { class: "grid grid-cols-1 md:grid-cols-3 gap-4 mt-3",
-                    for state in SliceState::BOARD {
+                    for (state , bucket) in buckets {
                         BoardColumn {
                             state,
                             label: state_label(state).to_string(),
                             badge_class: state_badge_class(state).to_string(),
-                            slices: slices.iter().filter(|s| s.state == state).cloned().collect::<Vec<_>>(),
+                            slices: bucket,
                             on_assign: move |number| on_assign.call(number),
                         }
                     }

@@ -65,7 +65,8 @@ fn falls_back_to_prose_when_native_links_are_absent() {
     // prose is resolved against the fetched board.
     let prose_only = raw_by_number(&raws, 9);
 
-    // The prose parent (#1) resolves to that issue's real title for the PRD tag.
+    // The prose parent (#1) resolves to that issue's real identity for the lane
+    // header.
     assert_eq!(
         prose_only.prd.as_ref().map(|prd| prd.title.as_str()),
         Some("PRD: Zfirot desktop dashboard")

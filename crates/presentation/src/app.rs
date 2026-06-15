@@ -269,7 +269,7 @@ fn Board(slices: Vec<Slice>) -> Element {
                     key: "{lane.prd.as_ref().map(|prd| prd.number).unwrap_or(0)}",
                     prd: lane.prd,
                     slices: lane.slices,
-                    on_assign: move |_number| {}, // Assign-self is wired in a later slice. No-op for now.,
+                    on_assign: move |_number| {}, // Assign-self is wired in a later slice. No-op for now.
                 }
             }
         }

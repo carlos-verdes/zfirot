@@ -39,8 +39,8 @@ pub fn PrdLane(prd: Option<PrdRef>, slices: Vec<Slice>, on_assign: EventHandler<
                         span { class: "font-semibold opacity-70", "No PRD" }
                     },
                 }
-                div { class: "flex items-center gap-1 ml-auto",
-                    if collapsed() {
+                if collapsed() {
+                    div { class: "flex items-center gap-1",
                         for (state , count) in counts.iter().copied() {
                             span {
                                 class: "badge badge-sm {state_badge_class(state)}",
@@ -49,8 +49,8 @@ pub fn PrdLane(prd: Option<PrdRef>, slices: Vec<Slice>, on_assign: EventHandler<
                             }
                         }
                     }
-                    span { class: if collapsed() { "icon-[lucide--chevron-down]" } else { "icon-[lucide--chevron-up]" } }
                 }
+                span { class: if collapsed() { "icon-[lucide--chevron-down] ml-auto" } else { "icon-[lucide--chevron-up] ml-auto" } }
             }
             if !collapsed() {
                 div { class: "grid grid-cols-1 md:grid-cols-3 gap-4 mt-3",

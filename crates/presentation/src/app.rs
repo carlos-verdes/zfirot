@@ -119,6 +119,12 @@ pub fn App() -> Element {
     use_future(move || async move {
         let interval = PollInterval::default().as_duration();
         loop {
+            // `tokio::time::sleep` is fine while v1 is a standalone desktop app
+            // running on Dioxus's tokio runtime. It depends on tokio's time
+            // driver, which is unavailable on `wasm32`, so if a web/server
+            // presentation is added later this timer should move behind a
+            // desktop-only `cfg` (or swap to a wasm-portable timer like
+            // `futures-timer`) when we gate server/web/desktop.
             tokio::time::sleep(interval).await;
             // `peek` reads the latest view without subscribing, so this loop is
             // never restarted by its own re-resolves.
@@ -364,12 +370,15 @@ fn BoardShell(
                 h1 { class: "text-2xl font-bold", "Zfirot" }
                 if let Some(repo) = repo {
                     span { class: "text-base opacity-60", "/ {repo}" }
-                    button {
-                        class: "btn btn-ghost btn-sm btn-square",
-                        title: "Back to projects",
-                        onclick: move |_| on_home.call(()),
-                        span { class: "icon-[lucide--undo-2] size-5" }
-                    }
+                }
+                // Always available so an error view (which carries no `repo`)
+                // still has a navigation escape hatch back to the project picker.
+                button {
+                    class: "btn btn-ghost btn-sm btn-square",
+                    title: "Back to projects",
+                    aria_label: "Back to projects",
+                    onclick: move |_| on_home.call(()),
+                    span { class: "icon-[lucide--undo-2] size-5" }
                 }
                 // Freshness controls, pushed to the right.
                 div { class: "ml-auto flex items-center gap-3",
@@ -380,6 +389,7 @@ fn BoardShell(
                         button {
                             class: "btn btn-ghost btn-sm btn-square",
                             title: "Refresh now",
+                            aria_label: "Refresh now",
                             onclick: move |_| on_refresh.call(()),
                             span { class: "icon-[lucide--refresh-cw] size-5" }
                         }

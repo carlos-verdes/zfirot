@@ -29,7 +29,10 @@ fn maps_native_relationships_into_raw_slices() {
 
     // Ready: no assignee, no open PR, no open blocker; PRD from the native parent.
     let ready = raw_by_number(&raws, 4);
-    assert_eq!(ready.prd_title.as_deref(), Some("Zfirot desktop dashboard"));
+    assert_eq!(
+        ready.prd.as_ref().map(|prd| prd.title.as_str()),
+        Some("Zfirot desktop dashboard")
+    );
     assert_eq!(
         ready.url, "https://github.com/funkode-io/zfirot/issues/4",
         "the issue url is carried through for the clickable card"
@@ -50,7 +53,7 @@ fn maps_native_relationships_into_raw_slices() {
 
     // No native parent and only-closed native blockers, with no prose either.
     let orphan = raw_by_number(&raws, 8);
-    assert_eq!(orphan.prd_title, None);
+    assert_eq!(orphan.prd, None);
     assert_eq!(orphan.open_blocker_count, 0);
 }
 
@@ -64,7 +67,7 @@ fn falls_back_to_prose_when_native_links_are_absent() {
 
     // The prose parent (#1) resolves to that issue's real title for the PRD tag.
     assert_eq!(
-        prose_only.prd_title.as_deref(),
+        prose_only.prd.as_ref().map(|prd| prd.title.as_str()),
         Some("PRD: Zfirot desktop dashboard")
     );
 

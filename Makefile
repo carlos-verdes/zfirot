@@ -1,6 +1,10 @@
-.PHONY: dev run build bundle css css-watch fmt lint test check icon
+.PHONY: dev run build bundle dmg install css css-watch fmt lint test check icon
 
 PRESENTATION := crates/presentation
+
+# Where `dx bundle` writes the macOS artifacts.
+BUNDLE_DIR := target/dx/zfirot/bundle/macos/bundle
+APP := $(BUNDLE_DIR)/macos/Zfirot.app
 
 # Compile the Tailwind + daisyUI + Iconify stylesheet into the bundled asset.
 css:
@@ -46,11 +50,24 @@ build:
 
 # Build a distributable macOS .app bundle (the only way to get the ZF dock icon
 # on macOS — a bare `cargo run` always uses the OS default dock icon). Compiles
-# the stylesheet first so the bundled UI is styled. The .app lands under
-# target/dx/zfirot/bundle/macos/. Pass PACKAGE_TYPES=dmg to build a .dmg instead.
+# the stylesheet first so the bundled UI is styled. The .app lands at $(APP).
+# Pass PACKAGE_TYPES=dmg to build a .dmg instead (or use the `dmg` target).
 PACKAGE_TYPES ?= macos
 bundle: css
 	dx bundle --package zfirot --platform desktop --package-types $(PACKAGE_TYPES)
+
+# Build the macOS .dmg installer and print its path so you can open/distribute it.
+dmg:
+	$(MAKE) bundle PACKAGE_TYPES=dmg
+	@echo "DMG ready at:" && ls -1 $(BUNDLE_DIR)/dmg/*.dmg
+
+# Build the .app and install it into /Applications, clearing the Gatekeeper
+# quarantine flag so the unsigned app opens without a right-click → Open dance.
+install: bundle
+	rm -rf /Applications/Zfirot.app
+	cp -R $(APP) /Applications/Zfirot.app
+	xattr -dr com.apple.quarantine /Applications/Zfirot.app
+	@echo "Installed /Applications/Zfirot.app — launch it from Spotlight or the dock."
 
 fmt:
 	cargo fmt --all

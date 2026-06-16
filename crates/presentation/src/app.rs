@@ -13,7 +13,9 @@ use domain::{
     Project, RepoRef, Slice,
 };
 
-use crate::components::{ErrorBanner, HomeScreen, OtherIssueCard, PrdLane, TokenScreen};
+use crate::components::{
+    ErrorBanner, HomeScreen, LoadingScreen, OtherIssueCard, PrdLane, Spinner, TokenScreen,
+};
 use crate::state::{
     assign_self, cached_projects, confirm_classification, last_opened, open_project,
     refresh_projects, refresh_recent_projects, secure_store, AppState,
@@ -81,6 +83,10 @@ pub fn App() -> Element {
     // home screen, not on every `reload` bump. Reset when the user navigates
     // back to Home so returning revalidates again.
     let mut revalidated = use_signal(|| false);
+    // True while a freshly-pasted token is being validated and persisted. This
+    // save is a mutation, not part of the read-only `view` resource, so it needs
+    // its own in-flight flag to drive the spinner on the submit button.
+    let mut saving = use_signal(|| false);
 
     let view = use_resource(move || async move {
         let _ = reload(); // subscribe so a save or selection re-resolves the view
@@ -144,6 +150,7 @@ pub fn App() -> Element {
 
     let on_submit = move |raw: String| {
         spawn(async move {
+            saving.set(true);
             let auth = AuthService::new(secure_store());
             match auth.save_token(&raw).await {
                 Ok(()) => {
@@ -152,6 +159,7 @@ pub fn App() -> Element {
                 }
                 Err(error) => token_error.set(Some(error.to_string())),
             }
+            saving.set(false);
         });
     };
 
@@ -173,23 +181,64 @@ pub fn App() -> Element {
         reload += 1;
     };
 
+    // True only on a *cold* board load: the user navigated to a project whose
+    // board is not on screen yet (opening it from home, or reopening the last
+    // one on launch). A board *self-refresh* — the background poll, the Refresh
+    // button, or the re-poll after assigning/confirming — leaves the populated
+    // board as the current value, so this stays false and the board keeps
+    // showing instead of flashing a spinner over it.
+    let board_loading = matches!(*view.state().read(), UseResourceState::Pending)
+        && match (nav(), &*view.read_unchecked()) {
+            (Nav::Project(target), Some(View::Board { repo, .. })) => *repo != target,
+            (Nav::Project(_), _) => true,
+            _ => false,
+        };
+
+    // True while an *already-shown* board is silently re-resolving: the
+    // background poll, the Refresh button, or the re-poll after assigning or
+    // confirming. The board stays on screen (see `board_loading`), so this only
+    // drives a small in-flight indicator on the Refresh button rather than
+    // replacing any content.
+    let refreshing = matches!(*view.state().read(), UseResourceState::Pending)
+        && matches!(&*view.read_unchecked(), Some(View::Board { .. }))
+        && !board_loading;
+
     rsx! {
         document::Title { "Zfirot" }
         document::Stylesheet { href: TAILWIND_CSS }
 
-        match &*view.read_unchecked() {
-            // No token yet, or a stored token was rejected: show the paste-token
-            // screen. A fresh submit error takes precedence over a stale reject
-            // reason carried by the view.
-            Some(View::NeedToken { reason }) => rsx! {
-                TokenScreen { error: token_error().or_else(|| reason.clone()), on_submit }
+        match (&*view.read_unchecked(), board_loading, nav()) {
+            // Navigating to a board we do not have yet: opening a project from
+            // the home screen or reopening one on launch. Show the board chrome
+            // with a spinner so the navigation has immediate feedback. A board
+            // that is merely self-refreshing keeps `board_loading` false and so
+            // falls through to the populated `View::Board` arm below.
+            (_, true, Nav::Project(repo)) => rsx! {
+                BoardShell { repo: repo.to_string(), on_home,
+                    div { class: "flex justify-center py-16",
+                        Spinner { label: "Loading board…" }
+                    }
+                }
             },
-            // Token present but no project open: show recent projects.
-            Some(View::Home { projects, .. }) => rsx! {
+            // Token present but no project open: show recent projects. Kept
+            // visible while the list silently revalidates (stale-while-revalidate)
+            // so the background refresh does not flash a spinner.
+            (Some(View::Home { projects, .. }), ..) => rsx! {
                 HomeScreen { projects: projects.clone(), on_open }
             },
+            // No token yet, or a stored token was rejected: show the paste-token
+            // screen. A fresh submit error takes precedence over a stale reject
+            // reason carried by the view. `saving` drives the submit spinner while
+            // a freshly-pasted token is validated.
+            (Some(View::NeedToken { reason }), ..) => rsx! {
+                TokenScreen {
+                    error: token_error().or_else(|| reason.clone()),
+                    saving: saving(),
+                    on_submit,
+                }
+            },
             // Token present and the board loaded.
-            Some(View::Board { repo, board, loaded_at }) => {
+            (Some(View::Board { repo, board, loaded_at }), ..) => {
                 // Claim the Slice on GitHub, then re-poll so the now-assigned
                 // Slice derives Wip and leaves Ready. On failure the board is
                 // left unchanged and the error is surfaced above it.
@@ -229,6 +278,7 @@ pub fn App() -> Element {
                         repo: repo.to_string(),
                         on_home,
                         on_refresh,
+                        refreshing,
                         last_updated: loaded_at.clone(),
                         if let Some(message) = assign_error() {
                             ErrorBanner { message }
@@ -244,15 +294,13 @@ pub fn App() -> Element {
                     }
                 }
             }
-            Some(View::Error(message)) => rsx! {
+            (Some(View::Error(message)), ..) => rsx! {
                 BoardShell { on_home, on_refresh,
                     ErrorBanner { message: message.clone() }
                 }
             },
-            None => rsx! {
-                div { class: "min-h-screen bg-base-200 grid place-items-center",
-                    span { class: "loading loading-spinner loading-lg" }
-                }
+            (None, ..) => rsx! {
+                LoadingScreen { label: "Loading…" }
             },
         }
     }
@@ -377,13 +425,16 @@ fn now_hms() -> String {
 /// `repo` names the open project (shown beside the title) when there is one;
 /// `on_home` returns to the project picker. When `on_refresh` is set a Refresh
 /// button re-polls the board on demand, and `last_updated` shows when the
-/// current snapshot was loaded.
+/// current snapshot was loaded. While `refreshing` is set that button shows an
+/// inline spinner and is disabled, so an in-flight refresh has feedback without
+/// disturbing the board content.
 #[component]
 fn BoardShell(
     children: Element,
     on_home: EventHandler<()>,
     #[props(default)] repo: Option<String>,
     #[props(default)] on_refresh: Option<EventHandler<()>>,
+    #[props(default)] refreshing: bool,
     #[props(default)] last_updated: Option<String>,
 ) -> Element {
     rsx! {
@@ -413,8 +464,13 @@ fn BoardShell(
                             class: "btn btn-ghost btn-sm btn-square",
                             title: "Refresh now",
                             aria_label: "Refresh now",
+                            disabled: refreshing,
                             onclick: move |_| on_refresh.call(()),
-                            span { class: "icon-[lucide--refresh-cw] size-5" }
+                            if refreshing {
+                                span { class: "loading loading-spinner size-5" }
+                            } else {
+                                span { class: "icon-[lucide--refresh-cw] size-5" }
+                            }
                         }
                     }
                 }

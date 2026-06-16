@@ -46,6 +46,22 @@ _Avoid_: waiting, stuck
 A closed Slice or PRD. Hidden from the active board.
 _Avoid_: complete, finished, merged
 
+**Agent**:
+A non-human worker that can be given a Ready Slice to work on. In v1 the only
+Agent is GitHub's hosted Copilot coding agent, delegated to by assigning its bot
+account to the Slice's issue. Self-hosted Agents (containers the app launches)
+are a later phase. Delegating to an Agent is one way to pick up a Slice; the goal
+is to parallelise work across every available Agent.
+_Avoid_: bot, worker, copilot (the specific provider, not the role)
+
+**Assignable Agent**:
+An Agent that can currently be given a Slice on a given repo, discovered live per
+board. The board carries the full set of them (zero or more); in v1 the set is
+either empty or just GitHub's Copilot, but later it also includes any local
+Agents. When a Slice is delegated the user picks which Assignable Agent does the
+work. Carried on the board read model as current state, never persisted.
+_Avoid_: available bot, copilot id, the agent (there may be several)
+
 **Unclassified issue**:
 An open GitHub Issue the app cannot confidently map to a PRD or Slice. Surfaced
 on the dashboard as "other open issues" with no further action.

@@ -1,3 +1,12 @@
 [application]
 name = "zfirot"
 default_platform = "desktop"
+
+# Metadata for `dx bundle` (e.g. the macOS .app). The icon set drives the dock
+# icon for the bundled app — macOS ignores the runtime `with_window_icon`, so a
+# bundle is the only way to get the ZF logo in the dock. Regenerate the .icns
+# from the SVG with `make icon`.
+[bundle]
+identifier = "io.funkode.zfirot"
+publisher = "funkode"
+icon = ["assets/icon.icns", "assets/icon.png"]

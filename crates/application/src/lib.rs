@@ -156,6 +156,13 @@ pub trait ProjectStorePort: Send + Sync {
     async fn cached_projects(&self) -> AppResult<Option<Vec<Project>>>;
     /// Replace the cached recent-projects list with `projects`.
     async fn cache_projects(&self, projects: &[Project]) -> AppAction;
+    /// The repositories the user has summoned by name on the home screen, in
+    /// newest-added-first order.
+    async fn tracked_repos(&self) -> AppResult<Vec<RepoRef>>;
+    /// Add a repo to the tracked list if not already present (idempotent).
+    async fn track_repo(&self, repo: &RepoRef) -> AppAction;
+    /// Remove a repo from the tracked list.
+    async fn untrack_repo(&self, repo: &RepoRef) -> AppAction;
 }
 
 /// Shared stores are stores too, so the composition root can hand the same
@@ -176,6 +183,18 @@ impl<S: ProjectStorePort + ?Sized> ProjectStorePort for Arc<S> {
 
     async fn cache_projects(&self, projects: &[Project]) -> AppAction {
         (**self).cache_projects(projects).await
+    }
+
+    async fn tracked_repos(&self) -> AppResult<Vec<RepoRef>> {
+        (**self).tracked_repos().await
+    }
+
+    async fn track_repo(&self, repo: &RepoRef) -> AppAction {
+        (**self).track_repo(repo).await
+    }
+
+    async fn untrack_repo(&self, repo: &RepoRef) -> AppAction {
+        (**self).untrack_repo(repo).await
     }
 }
 
@@ -536,5 +555,44 @@ impl<S: ProjectStorePort> LastOpenedService<S> {
             .last_opened()
             .await
             .map_err(|err| err.with_operation("LastOpenedService::last_opened"))
+    }
+}
+
+/// Use-case for opening a project summoned by name on the home screen (the
+/// go-to action), composing the live board fetch ([`BoardService`]) with the
+/// on-device tracked/last-opened store ([`ProjectStorePort`]).
+///
+/// Keeping this orchestration here — rather than in the presentation layer —
+/// makes the "track only on a successful open" behaviour testable at the
+/// use-case seam against fakes (no GitHub, no disk).
+pub struct TrackedProjectsService<G: GitHubPort, S: ProjectStorePort> {
+    board: BoardService<G>,
+    store: S,
+}
+
+impl<G: GitHubPort, S: ProjectStorePort> TrackedProjectsService<G, S> {
+    pub fn new(github: G, store: S) -> Self {
+        Self {
+            board: BoardService::new(github),
+            store,
+        }
+    }
+
+    /// Open a repo summoned by name: load and classify its board to verify
+    /// access, then — only on success — track the repo (idempotent) and
+    /// remember it as last-opened before returning the board. A failed load
+    /// (e.g. a 404 for a repo that does not exist or is not accessible)
+    /// propagates and tracks nothing.
+    ///
+    /// The track and last-opened writes are deliberately **best-effort**: the
+    /// board has already loaded, so a local-store write failure must not fail an
+    /// otherwise-successful open. Such a failure simply leaves the repo
+    /// untracked for now — the next successful open re-attempts it — rather than
+    /// surfacing an error to the user.
+    pub async fn open_and_track(&self, repo: &RepoRef) -> AppResult<ClassifiedBoard> {
+        let board = self.board.classify_board(repo).await?;
+        let _ = self.store.track_repo(repo).await;
+        let _ = self.store.remember_last_opened(repo).await;
+        Ok(board)
     }
 }

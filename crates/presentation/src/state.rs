@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use application::{
     AuthService, BoardService, ClassifiedBoard, GitHubPort, LastOpenedService, ProjectStorePort,
-    ProjectsRefresh, RecentProjectsService, SecureStorePort,
+    ProjectsRefresh, RecentProjectsService, SecureStorePort, TrackedProjectsService,
 };
 use domain::{AppAction, AppResult, GitHubToken, IssueClassification, Project, RepoRef};
 #[cfg(debug_assertions)]
@@ -111,6 +111,12 @@ pub async fn cached_projects() -> AppResult<Option<Vec<Project>>> {
     project_store()?.cached_projects().await
 }
 
+/// The repositories the user has summoned by name on the home screen, in
+/// newest-added-first order. A local store read: no token or network involved.
+pub async fn tracked_repos() -> AppResult<Vec<RepoRef>> {
+    project_store()?.tracked_repos().await
+}
+
 /// Refresh the recent-projects list from GitHub, rewriting the local cache only
 /// when it changed, and report the outcome. The caller holds the resolved token
 /// (e.g. the cold-cache blocking fetch on the home screen).
@@ -137,6 +143,23 @@ pub async fn last_opened() -> AppResult<Option<RepoRef>> {
 /// A local store write only: no token or network involved.
 pub async fn open_project(repo: &RepoRef) -> AppAction {
     last_opened_service()?.open_project(repo).await
+}
+
+/// Open a project via the go-to (typed-repo) action: try to load the board to
+/// verify access, and if successful, track the repo before remembering it as
+/// last-opened. Returns the board on success; on failure (e.g. 404), returns the
+/// error and does NOT track.
+///
+/// The orchestration lives in [`TrackedProjectsService`]; this only wires the
+/// live adapter and store into it.
+pub async fn open_and_track_project(
+    token: &GitHubToken,
+    repo: &RepoRef,
+) -> AppResult<ClassifiedBoard> {
+    let port: Arc<dyn GitHubPort> = Arc::new(GitHubClient::new(token.expose())?);
+    TrackedProjectsService::new(port, project_store()?)
+        .open_and_track(repo)
+        .await
 }
 
 /// Assign the authenticated user to a Ready Slice's issue, claiming it on

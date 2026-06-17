@@ -17,8 +17,8 @@ use crate::components::{
     ErrorBanner, HomeScreen, LoadingScreen, OtherIssueCard, PrdLane, Spinner, TokenScreen,
 };
 use crate::state::{
-    assign_self, cached_projects, confirm_classification, last_opened, open_project,
-    refresh_projects, refresh_recent_projects, secure_store, AppState,
+    assign_self, cached_projects, confirm_classification, last_opened, open_and_track_project,
+    open_project, refresh_projects, refresh_recent_projects, secure_store, tracked_repos, AppState,
 };
 
 /// Compiled Tailwind + daisyUI + Iconify stylesheet, bundled as an asset.
@@ -31,9 +31,11 @@ enum View {
     /// `from_cache` is `true` only when this list came from an instant cached
     /// paint that still needs revalidating; a list produced by a live fetch
     /// (cold-cache fallback or a completed refresh) sets it `false` so the
-    /// background effect does not fetch again.
+    /// background effect does not fetch again. `tracked_repos` are shown in a
+    /// separate section.
     Home {
         projects: Vec<Project>,
+        tracked_repos: Vec<RepoRef>,
         from_cache: bool,
     },
     /// A token is stored and the board for `repo` loaded and was classified into
@@ -60,8 +62,13 @@ enum Nav {
     Auto,
     /// Explicitly show the home screen (the recent-projects picker).
     Home,
-    /// Show the board for a project the user just chose.
+    /// Show the board for a project the user just chose from the recent list.
     Project(RepoRef),
+    /// Open a project summoned by name (the go-to action): load its board and,
+    /// on success, track it. Resolved once via `open_and_track_project` so a
+    /// go-to open fetches the board only once (no verify-then-reopen double
+    /// fetch), and a failure surfaces like any other board load.
+    GoTo(RepoRef),
 }
 
 #[component]
@@ -163,14 +170,23 @@ pub fn App() -> Element {
         });
     };
 
-    let on_open = move |repo: RepoRef| {
+    let on_open_discovered = use_callback(move |repo: RepoRef| {
         spawn(async move {
             // Persist the choice (best-effort) and navigate to its board.
             let _ = open_project(&repo).await;
             nav.set(Nav::Project(repo));
             reload += 1;
         });
-    };
+    });
+
+    let on_open_goto = use_callback(move |repo: RepoRef| {
+        // The go-to open (load the board, track on success) happens in
+        // `resolve_view` for `Nav::GoTo`, so this only routes there. Doing the
+        // work there means the board is fetched once, and a failure (e.g. a 404)
+        // surfaces through the normal view resolution rather than being dropped.
+        nav.set(Nav::GoTo(repo));
+        reload += 1;
+    });
 
     // Back to the project picker. Persistence is untouched, so the next launch
     // still reopens the last project; this only changes the current session.
@@ -189,8 +205,10 @@ pub fn App() -> Element {
     // showing instead of flashing a spinner over it.
     let board_loading = matches!(*view.state().read(), UseResourceState::Pending)
         && match (nav(), &*view.read_unchecked()) {
-            (Nav::Project(target), Some(View::Board { repo, .. })) => *repo != target,
-            (Nav::Project(_), _) => true,
+            (Nav::Project(target) | Nav::GoTo(target), Some(View::Board { repo, .. })) => {
+                *repo != target
+            }
+            (Nav::Project(_) | Nav::GoTo(_), _) => true,
             _ => false,
         };
 
@@ -213,7 +231,7 @@ pub fn App() -> Element {
             // with a spinner so the navigation has immediate feedback. A board
             // that is merely self-refreshing keeps `board_loading` false and so
             // falls through to the populated `View::Board` arm below.
-            (_, true, Nav::Project(repo)) => rsx! {
+            (_, true, Nav::Project(repo) | Nav::GoTo(repo)) => rsx! {
                 BoardShell { repo: repo.to_string(), on_home,
                     div { class: "flex justify-center py-16",
                         Spinner { label: "Loading board…" }
@@ -223,13 +241,14 @@ pub fn App() -> Element {
             // Token present but no project open: show recent projects. Kept
             // visible while the list silently revalidates (stale-while-revalidate)
             // so the background refresh does not flash a spinner.
-            (Some(View::Home { projects, .. }), ..) => rsx! {
-                HomeScreen { projects: projects.clone(), on_open }
+            (Some(View::Home { projects, tracked_repos, .. }), ..) => rsx! {
+                HomeScreen {
+                    projects: projects.clone(),
+                    tracked_repos: tracked_repos.clone(),
+                    on_open_discovered,
+                    on_open_goto,
+                }
             },
-            // No token yet, or a stored token was rejected: show the paste-token
-            // screen. A fresh submit error takes precedence over a stale reject
-            // reason carried by the view. `saving` drives the submit spinner while
-            // a freshly-pasted token is validated.
             (Some(View::NeedToken { reason }), ..) => rsx! {
                 TokenScreen {
                     error: token_error().or_else(|| reason.clone()),
@@ -327,10 +346,29 @@ async fn resolve_view(nav: Nav) -> View {
 
     // Decide the project to open from where the user wants to be. `Home` always
     // shows the picker; `Auto` reopens the last-opened project or, failing that,
-    // shows the picker too.
+    // shows the picker too. `GoTo` is resolved here so the go-to open fetches the
+    // board exactly once and tracks on success.
     let repo = match nav {
         Nav::Home => return home_view(&auth, &token).await,
         Nav::Project(repo) => repo,
+        Nav::GoTo(repo) => {
+            // Go-to open: load and classify the board (tracking on success); a
+            // failed load surfaces here rather than being silently dropped.
+            return match open_and_track_project(&token, &repo).await {
+                Ok(board) => View::Board {
+                    repo,
+                    board,
+                    loaded_at: now_hms(),
+                },
+                Err(error) if is_auth_failure(error.kind()) => {
+                    let _ = auth.clear_token().await;
+                    View::NeedToken {
+                        reason: Some(error.to_string()),
+                    }
+                }
+                Err(error) => View::Error(error.to_string()),
+            };
+        }
         Nav::Auto => match last_opened().await {
             Ok(Some(repo)) => repo,
             Ok(None) => return home_view(&auth, &token).await,
@@ -370,11 +408,15 @@ async fn resolve_view(nav: Nav) -> View {
 /// listing (`Unauthorized`/`Forbidden`) is discarded and routes back to the
 /// paste-token screen, just like the board path; any other failure is transient.
 async fn home_view<S: SecureStorePort>(auth: &AuthService<S>, token: &GitHubToken) -> View {
+    // Get tracked repos (best-effort; a read failure returns an empty list).
+    let tracked = tracked_repos().await.unwrap_or_default();
+
     // Warm cache: render immediately without waiting on GitHub. `from_cache`
     // tells the background effect this paint still needs revalidating.
     if let Ok(Some(projects)) = cached_projects().await {
         return View::Home {
             projects,
+            tracked_repos: tracked,
             from_cache: true,
         };
     }
@@ -383,6 +425,7 @@ async fn home_view<S: SecureStorePort>(auth: &AuthService<S>, token: &GitHubToke
     match refresh_projects(token).await {
         Ok(ProjectsRefresh::Changed(projects)) => View::Home {
             projects,
+            tracked_repos: tracked,
             from_cache: false,
         },
         // The cache was populated concurrently and already matches the live
@@ -392,6 +435,7 @@ async fn home_view<S: SecureStorePort>(auth: &AuthService<S>, token: &GitHubToke
         Ok(ProjectsRefresh::Unchanged) => match cached_projects().await {
             Ok(Some(projects)) => View::Home {
                 projects,
+                tracked_repos: tracked,
                 from_cache: false,
             },
             Ok(None) => View::Error("The cached projects vanished during refresh.".into()),

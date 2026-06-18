@@ -193,10 +193,6 @@ pub async fn assign_self(repo: &RepoRef, issue_number: u64) -> AppAction {
 /// on GitHub. Reads the stored token, wires the live adapter scoped to `repo`,
 /// and runs the assign-agent use-case; the board is re-polled by the caller on
 /// success and left unchanged on failure.
-#[expect(
-    dead_code,
-    reason = "delegate action path; the Adaptive Agent button is wired in #47"
-)]
 pub async fn assign_agent(repo: &RepoRef, issue_number: u64, agent: &AgentRef) -> AppAction {
     let token = AuthService::new(secure_store()).require_token().await?;
     AppState::from_token(&token, repo.clone())?

@@ -1,5 +1,5 @@
 use dioxus::prelude::*;
-use domain::{PrdRef, Slice, SliceState};
+use domain::{AgentRef, PrdRef, Slice, SliceState};
 
 use super::{state_badge_class, state_label, BoardColumn};
 
@@ -17,7 +17,10 @@ use super::{state_badge_class, state_label, BoardColumn};
 pub fn PrdLane(
     prd: Option<PrdRef>,
     slices: Vec<Slice>,
+    agents: Vec<AgentRef>,
     on_assign: EventHandler<u64>,
+    on_assign_agent: EventHandler<(u64, AgentRef)>,
+    delegating: Option<u64>,
     highlighted: Option<u64>,
     on_highlight: EventHandler<Option<u64>>,
 ) -> Element {
@@ -81,7 +84,10 @@ pub fn PrdLane(
                             label: state_label(state).to_string(),
                             badge_class: state_badge_class(state).to_string(),
                             slices: bucket,
+                            agents: agents.clone(),
                             on_assign,
+                            on_assign_agent,
+                            delegating,
                             highlighted,
                             on_highlight,
                         }

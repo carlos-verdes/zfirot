@@ -1,10 +1,16 @@
 use dioxus::prelude::*;
-use domain::{Slice, SliceState};
+use domain::{AgentRef, Slice, SliceState};
 
-use super::{state_badge_class, state_label};
+use super::{agent_action, state_badge_class, state_label, AgentAction};
 
 /// A card for a single Slice. Emits `on_assign` with the issue number when the
 /// user clicks "Assign me" (only shown for Ready Slices).
+///
+/// A Ready card also carries the **adaptive Agent action** driven by the board's
+/// Assignable `agents`: none → no Agent action; one → a single "Assign &lt;name&gt;"
+/// button; two or more → a picker. Selecting an Agent emits `on_assign_agent`
+/// with the issue number and chosen [`AgentRef`]. While `delegating` matches this
+/// card's number the actions show a spinner and are disabled.
 ///
 /// Dependency badges live at the bottom: a **Blocked** card lists its blockers,
 /// any other card lists the issues it **unblocks**. Each badge links to its
@@ -15,13 +21,17 @@ use super::{state_badge_class, state_label};
 #[component]
 pub fn SliceCard(
     slice: Slice,
+    agents: Vec<AgentRef>,
     on_assign: EventHandler<u64>,
+    on_assign_agent: EventHandler<(u64, AgentRef)>,
+    delegating: Option<u64>,
     highlighted: Option<u64>,
     on_highlight: EventHandler<Option<u64>>,
 ) -> Element {
     let number = slice.number;
     let is_ready = slice.state == SliceState::Ready;
     let is_highlighted = highlighted == Some(number);
+    let is_delegating = delegating == Some(number);
 
     // Blocked cards surface their blockers; every other card surfaces what it
     // unblocks. An empty list renders no badge row.
@@ -57,10 +67,19 @@ pub fn SliceCard(
                         span {}
                     }
                     if is_ready {
-                        button {
-                            class: "btn btn-xs btn-primary",
-                            onclick: move |_| on_assign.call(number),
-                            "Assign me"
+                        div { class: "flex items-center gap-1",
+                            button {
+                                class: "btn btn-xs btn-primary",
+                                disabled: is_delegating,
+                                onclick: move |_| on_assign.call(number),
+                                "Assign me"
+                            }
+                            AgentActionButtons {
+                                number,
+                                action: agent_action(&agents),
+                                delegating: is_delegating,
+                                on_assign_agent,
+                            }
                         }
                     }
                 }
@@ -90,5 +109,65 @@ pub fn SliceCard(
                 }
             }
         }
+    }
+}
+
+/// The adaptive Agent action for a Ready card: nothing, a single labelled
+/// button, or a picker dropdown — per [`agent_action`]. While `delegating` it
+/// shows an in-flight spinner and disables selection.
+#[component]
+fn AgentActionButtons(
+    number: u64,
+    action: AgentAction,
+    delegating: bool,
+    on_assign_agent: EventHandler<(u64, AgentRef)>,
+) -> Element {
+    match action {
+        AgentAction::None => rsx! {},
+        AgentAction::Single(agent) => {
+            let label = agent.name.clone();
+            rsx! {
+                button {
+                    class: "btn btn-xs btn-secondary",
+                    disabled: delegating,
+                    onclick: move |_| on_assign_agent.call((number, agent.clone())),
+                    if delegating {
+                        span { class: "loading loading-spinner loading-xs" }
+                    }
+                    "Assign {label}"
+                }
+            }
+        }
+        AgentAction::Picker(agents) => rsx! {
+            div { class: "dropdown dropdown-end",
+                button {
+                    class: "btn btn-xs btn-secondary",
+                    tabindex: "0",
+                    disabled: delegating,
+                    if delegating {
+                        span { class: "loading loading-spinner loading-xs" }
+                    }
+                    "Assign Agent"
+                    span { class: "icon-[lucide--chevron-down]" }
+                }
+                if !delegating {
+                    ul {
+                        class: "dropdown-content menu bg-base-100 rounded-box z-10 w-44 p-2 shadow-sm",
+                        tabindex: "0",
+                        for agent in agents {
+                            li { key: "{agent.node_id}",
+                                button {
+                                    onclick: {
+                                        let agent = agent.clone();
+                                        move |_| on_assign_agent.call((number, agent.clone()))
+                                    },
+                                    "{agent.name}"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
     }
 }

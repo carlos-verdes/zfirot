@@ -55,6 +55,14 @@ since the PR is being worked on while the Slice still has an open dependency
 that should land first.
 _Avoid_: closing PR, the PR (a Slice may have more than one open)
 
+**Unlinked PR**:
+An open Pull Request in the board's repo that sits on no Slice card, because it
+closes no issue or closes only issues that are not Slices (a PRD, an **Unclassified
+issue**, or an issue the board does not hold). Listed in its own "Unlinked pull
+requests" section below the Lanes with its PR status and Decorations, so no open
+PR is invisible. It never affects a Slice's state.
+_Avoid_: orphan PR, loose PR
+
 ## Pull request status
 
 **PR status**:

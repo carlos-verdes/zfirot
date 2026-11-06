@@ -3,7 +3,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use application::{
-    BoardCachePort, BoardCacheUsage, BoardOpen, BoardRefresh, CachedBoardService, GitHubPort,
+    BoardCachePort, BoardCacheUsage, BoardOpen, BoardRefresh, BoardService, CachedBoardService,
+    GitHubPort,
 };
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -185,6 +186,14 @@ fn open_issue(number: u64, title: &str) -> RawIssue {
         assignee: None,
         assignee_avatar_url: None,
         is_native_child_of_prd: false,
+    }
+}
+
+/// An open PR closing no issue, as an open-PR sweep reports it.
+fn unlinked_pr(number: u64) -> RawLinkedPr {
+    RawLinkedPr {
+        closes: vec![],
+        ..open_pr(number, 0)
     }
 }
 
@@ -674,6 +683,49 @@ async fn a_pr_appearing_in_the_sweep_moves_its_slice_to_wip() {
         BoardRefresh::Unchanged(_) => {
             panic!("a PR appearing in the sweep must repaint the board")
         }
+    }
+}
+
+/// A PR closing nothing has no Slice to move, so nothing but the Unlinked PR
+/// list can change. The refresh must still repaint, and a PR that leaves the
+/// sweep must leave the list.
+#[tokio::test]
+async fn an_unlinked_pr_appears_and_leaves_with_the_sweep() {
+    let repo = RepoRef::new("funkode-io", "zfirot");
+    let service = BoardService::new(
+        SequencePort::new(
+            vec![vec![open_issue(60, "Ready Slice")]],
+            vec![vec![], vec![]],
+        )
+        .sweeping(vec![vec![], vec![unlinked_pr(99)], vec![]]),
+    );
+
+    let loaded = service.load(&repo).await.expect("load should succeed");
+    assert!(loaded.board.unlinked_prs.is_empty());
+
+    let refreshed = match service
+        .refresh(&repo, &loaded.snapshot)
+        .await
+        .expect("refresh should succeed")
+    {
+        BoardRefresh::Changed(view) => view,
+        BoardRefresh::Unchanged(_) => panic!("a new unlinked PR must repaint the board"),
+    };
+    let unlinked: Vec<u64> = refreshed
+        .board
+        .unlinked_prs
+        .iter()
+        .map(|pr| pr.number)
+        .collect();
+    assert_eq!(unlinked, vec![99]);
+
+    match service
+        .refresh(&repo, &refreshed.snapshot)
+        .await
+        .expect("refresh should succeed")
+    {
+        BoardRefresh::Changed(view) => assert!(view.board.unlinked_prs.is_empty()),
+        BoardRefresh::Unchanged(_) => panic!("a merged unlinked PR must repaint the board"),
     }
 }
 

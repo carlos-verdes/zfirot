@@ -159,7 +159,8 @@ pub struct LinkedPrRef {
 /// authority on which PRs are open — a merged or closed PR is simply absent
 /// from the next sweep — and the join onto Slices happens at classification
 /// time, by issue number (see ADR 0008). A `closes` number the board does not
-/// hold (a closed issue, or one outside the fetched set) contributes nothing.
+/// hold (a closed issue, or one outside the fetched set) places the PR on no
+/// Slice; a PR left with no Slice at all is shown as an **Unlinked PR**.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RawLinkedPr {
     /// The PR's facts, as rendered on a Slice's `pr #n @u` badge.

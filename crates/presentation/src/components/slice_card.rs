@@ -2,8 +2,8 @@ use dioxus::prelude::*;
 use domain::{BlockedReason, Slice, SliceState};
 
 use super::{
-    blocked_reason_badge_class, blocked_reason_label, blocked_reasons_tooltip, pr_headline_color,
-    pr_headline_icon_class, pr_headline_label, state_badge_class, state_label,
+    blocked_reason_badge_class, blocked_reason_label, blocked_reasons_tooltip,
+    pr_headline_icon_class, state_badge_class, state_label, PrHeadline,
 };
 
 /// A card for a single Slice. Emits `on_assign` with the issue number when the
@@ -113,30 +113,7 @@ pub fn SliceCard(
             // --- PR status headline: the Slice's review-lifecycle spine, driven by its Best PR.
             // Shown whenever the Slice has at least one open PR; decorations ride on top.
             if let Some(pr) = slice.best_pr() {
-                div { class: "flex items-center gap-1.5 mt-1.5 {pr_headline_color(pr)}",
-                    span { class: "{pr_headline_icon_class(pr)} size-4 shrink-0" }
-                    span { class: "text-xs font-medium", "{pr_headline_label(pr)}" }
-                    // Merge-health Decorations ride on top of the status, orthogonally.
-                    if pr.conflicts {
-                        span {
-                            class: "icon-[octicon--alert-16] text-warning size-4 shrink-0",
-                            title: "Conflicts with base branch — needs a merge",
-                        }
-                    }
-                    if pr.ci_failing {
-                        span {
-                            class: "icon-[octicon--x-circle-fill-16] text-error size-4 shrink-0",
-                            title: "CI failing",
-                        }
-                    }
-                    if pr.unresolved_comment_count > 0 {
-                        span { class: "flex items-center gap-0.5 text-base-content/60 shrink-0",
-                            title: "{pr.unresolved_comment_count} unresolved comments",
-                            span { class: "icon-[octicon--comment-discussion-16] size-4" }
-                            span { class: "text-xs", "{pr.unresolved_comment_count}" }
-                        }
-                    }
-                }
+                PrHeadline { pr: pr.clone() }
             }
 
             // --- linked PR badges (all states) ---

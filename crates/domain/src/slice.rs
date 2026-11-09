@@ -153,18 +153,21 @@ pub struct LinkedPrRef {
 }
 
 /// A Linked PR exactly as an open-PR **Sweep** reports it: the PR's own facts
-/// plus the numbers of the issues it closes (GitHub's closing references).
+/// plus the numbers of the issues it closes (GitHub's closing references, or,
+/// when it has none, the issues its prose says it relates to).
 ///
 /// This is the raw read model of the PR side of the board. It is *the*
 /// authority on which PRs are open — a merged or closed PR is simply absent
 /// from the next sweep — and the join onto Slices happens at classification
 /// time, by issue number (see ADR 0008). A `closes` number the board does not
-/// hold (a closed issue, or one outside the fetched set) contributes nothing.
+/// hold (a closed issue, or one outside the fetched set) places the PR on no
+/// Slice; a PR left with no Slice at all is shown as an **Unlinked PR**.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RawLinkedPr {
     /// The PR's facts, as rendered on a Slice's `pr #n @u` badge.
     pub pr: LinkedPrRef,
-    /// The issue numbers this PR closes, from its closing references.
+    /// The issue numbers joining this PR onto Slices: its closing references,
+    /// or the issues it says it relates to when it has none.
     pub closes: Vec<u64>,
 }
 

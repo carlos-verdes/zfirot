@@ -252,19 +252,21 @@ How the user grants the app a token. There are two, and both yield a token that
 acts as a **Viewer**; everything downstream of sign-in treats them alike.
 - **Device sign-in** (UI: "Sign in with GitHub"), the default: the app shows a
   short code, the user enters it on GitHub and authorises the Zfirot GitHub App,
-  and the app receives a token it keeps fresh on its own. The token reaches only
-  repos where the app has an **Installation** and the Viewer also has access.
+  and the app receives a token it keeps fresh on its own. The token can read any
+  public repo, but private repos, and every write (assign self, add a label),
+  only where the app has an **Installation** and the Viewer also has access.
 - **Personal Access Token** (UI: "Use a personal access token instead"), the
   fallback: the user creates a fine-grained token on GitHub and pastes it in.
 _Avoid_: login type, OAuth, auth mode
 
 **Installation**:
 The Zfirot GitHub App installed on a GitHub account or organisation, granting it
-access to all or selected repos there. Installing is a one-time act by that
-account's owner (or an org owner, on request), separate from signing in. Under
-Device sign-in, a repo outside every Installation is unreachable however much
-access the Viewer has, so the app offers to install rather than calling it an
-error.
+access to all or selected repos there. Installing is a one-time act, separate
+from signing in, by the account's owner — or, in an org, an org owner or an
+admin of the repos being added when the org allows it, with a request to the
+owners as the fallback. Under Device sign-in, a private repo outside every
+Installation is unreachable however much access the Viewer has, and a public one
+is read-only, so the app offers to install rather than calling it an error.
 _Avoid_: authorisation (that is the per-user grant), connection, integration
 
 **Viewer**:
